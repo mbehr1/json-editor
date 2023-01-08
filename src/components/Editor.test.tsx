@@ -53,14 +53,43 @@ test('editor enter valid jsons', async () => {
     await testInput(true)
     await testInput(false)
     await testInput(null)
+    await testInput('')
     await testInput('foo')
-    await testInput('fo"o', '"fo"o"') // todo we dont want the editor to show the escaped \" but only the "
+    await testInput('fo"o', '"fo"o"') // we dont want the editor to show the escaped \" but only the "
     await testInput(42)
     await testInput(-42.5)
     await testInput(-42.5e-2)
     await testInputText('-42.5e-2', -42.5e-2, '-42.5e-2');
 
+    await testInput({})
+    //await testInputText('{"', {}, 'f')
+    //await testInputText('{"foo":true}', {}, 'f')
+    await testInput({ foo: true }) // single member, bool
+    await testInput({ foo: false })
+    await testInput({ foo: null })
+    await testInput({ a: "" })
+    await testInput({ a: "b" })
+    await testInput({ a: 'fo"o' }, '{"a":"fo"o"}') // see above, no escaped chars shown in the editor
+    await testInput({ a: 42 })
+    await testInput({ a: -42.5 })
+    await testInput({ foo: null, bla: true }) // two member, bool at start and end
+    await testInput({ a: false, b: -42.5 }) // two member, bool and number
+    await testInput({ a: -42.5, b: null }) // two member, bool and number
+    await testInput({ a: false, b: "-42.5" }) // two member, bool and string
+    await testInput({ a: false, b: "" }) // two member, bool and string
+    await testInput({ a: "", b: -42.5 }) // two member, string and number
+    await testInput({ a: -42.5, b: "" }) // two member, string and number
+    await testInput({ a: -42.5, b: "", c: false }) // three member, number, string and bool
+    await testInput({ b: "", c: false, a: -42.5 }) // three member, number, string and bool
+    await testInput({ c: false, a: -42.5, b: "" }) // three member, number, string and bool
+
+    await testInput({ a: {} }) // one member: empty object
+    await testInput({ a: { b: true } }) // one member: object with single entry
+    await testInput({ a: { b: "", c: 42.5 }, d: false }) // two member: object with two entries
+
     console.log(`editor=${JSON.stringify(editor.children)}`, editor);
+
+    // todo add test for rule #6.2
 
     //console.log(`el=`, el.toTree());
 });

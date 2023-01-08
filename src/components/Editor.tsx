@@ -54,17 +54,33 @@ declare module 'slate' {
     }
 }
 
-const isEmpty = (d: Descendant) => {
-    console.log(`isValidJson(${JSON.stringify(d)})...`);
+const isEmpty = (d: Descendant): boolean => {
+    //console.log(`isEmpty(${JSON.stringify(d)})...`);
     if ('type' in d) {
         return d.type === 'JsonSyntax' && (d.text.length === 0);
     } else {
-        if ('text' in d && (d as any).text === '') { return true } else { return false; }
+        if ('text' in d && (d as any).text.length === 0) { return true } else { return false; }
     }
 };
 
-export const isValidJson = (d: Descendant) => {
-    console.log(`isValidJson(${JSON.stringify(d)})...`);
+export const isValidMember = (d: JsonMember): boolean => {
+    if (d.children.length === 5) { // Syntax ", Key, Syntax ":, Value, Syntax: ""
+        const c1 = d.children[0];
+        const c2 = d.children[1];
+        const c3 = d.children[2];
+        const c5 = d.children[4];
+        const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
+        const c2Valid = 'type' in c3 && c2.type === 'JsonKey' && c2.text.length > 0;
+        const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '":';
+        const c5Valid = 'text' in c5 && c5.text.length === 0;
+        // console.log(`isValidMember(${JSON.stringify(d)})...valid=${[c1Valid, c2Valid, c3Valid, c5Valid]} `);
+        return c1Valid && c2Valid && c3Valid && c5Valid && isValidJson(d.children[3]);
+    }
+    return false;
+}
+
+export const isValidJson = (d: Descendant): boolean => {
+    //console.log(`isValidJson(${JSON.stringify(d)})...`);
     let toRet = false;
     switch (d.type) {
         case 'JsonBool':
@@ -74,18 +90,70 @@ export const isValidJson = (d: Descendant) => {
             break;
         case 'JsonNumber':
             if ('children' in d && d.children.length === 1) {
-                toRet = (/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g).test(d.children[0].text);
+                toRet = (/^\s*-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\s*$/g).test(d.children[0].text);
             }
             break;
         case 'JsonString':
-            if ('children' in d && d.children.length === 3) {
+            if ('children' in d) {
+                if (d.children.length === 3) {
+                    const c1 = d.children[0];
+                    const c2 = d.children[1];
+                    const c3 = d.children[2];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
+                    const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '"';
+                    const c2Valid = !('type' in c2);
+                    toRet = c1Valid && c2Valid && c3Valid;
+                } else if (d.children.length === 1) { // special case for e.g. empty string
+                    const c1 = d.children[0];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '""';
+                    toRet = c1Valid;
+                }
+            }
+            break;
+        case 'JsonObject':
+            // special case: empty object -> single JsonSyntax with text {}
+            if ('children' in d && d.children.length === 1) {
                 const c1 = d.children[0];
-                const c2 = d.children[1];
-                const c3 = d.children[2];
-                const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
-                const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '"';
-                const c2Valid = !('type' in c2);
-                return c1Valid && c2Valid && c3Valid;
+                const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trimStart().trimEnd() === '{}';
+                toRet = c1Valid;
+            } else
+                // we expect the first and last to be a JsonSyntax with text {,}
+                if ('children' in d && d.children.length >= 2) {
+                    const c1 = d.children[0];
+                    const cl = d.children[d.children.length - 1];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '{';
+                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text === '}';
+                    // console.log(`isValidJson(JsonObject: ${JSON.stringify(d)})...c1Valid=${c1Valid} clValid=${clValid}`);
+                    if (c1Valid && clValid) {
+                        // all children valid?
+                        let nrMembers = d.children.length - 2;
+                        // console.log(`isValidJson(JsonObject: ${JSON.stringify(d)})...nrMembers=${nrMembers}`);
+                        if (nrMembers === 0) {
+                            toRet = true;
+                        } else {
+                            if (nrMembers === 1) {
+                                const c = d.children[1];
+                                toRet = c.type === 'JsonMember' && isValidMember(c);
+                            } else {
+                                // iterate:
+                                let allValid = true;
+                                for (let i = 1; i < d.children.length - 1; ++i) { // all but first, last
+                                    const c = d.children[i];
+                                    let cValid = false;
+                                    if (i % 2 === 1) { // expect JsonMember
+                                        cValid = 'type' in c && c.type === 'JsonMember' && isValidMember(c);
+                                    } else { // expect JsonSyntax ,
+                                        cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
+                                    }
+                                    if (!cValid) {
+                                        allValid = false;
+                                        break;
+                                    }
+                                }
+                                toRet = allValid;
+                            }
+                        }
+                    }
             }
             break;
         case 'JsonDoc': {
@@ -98,7 +166,7 @@ export const isValidJson = (d: Descendant) => {
                 if (isEmpty(child as Descendant)) continue;
                 if (isValidJson(child as Descendant)) { nrValid++; } else { nrInvalid++; }
             }
-            console.log(`isValidJson(JsonDoc) nrInvalid=${nrInvalid} nrValid=${nrValid}`);
+            // console.log(`isValidJson(JsonDoc) nrInvalid=${nrInvalid} nrValid=${nrValid}`);
             toRet = nrInvalid === 0 && nrValid <= 1;
         }
             break;
@@ -107,52 +175,59 @@ export const isValidJson = (d: Descendant) => {
             break;
         default:
     }
-    console.log(`isValidJson(${JSON.stringify(d)})=${toRet}`);
+    if (!toRet) console.log(`isValidJson(${JSON.stringify(d, undefined, 2)})=${toRet}`);
     return toRet;
 };
 
-const normalizeJsonSyntax = (editor: ReactEditor, path: Path, text: string, textAfterCol: string) => {
+const normalizeJsonSyntax = (editor: ReactEditor, path: Path, text: string, textAfterCol: string, insertEmptyJsonSyntax?: boolean, insertNewAtPath?: Path) => {
     const isTrue = textAfterCol.toLowerCase().startsWith("true".slice(0, textAfterCol.length));
     const isFalse = !isTrue && textAfterCol.toLowerCase().startsWith("false".slice(0, textAfterCol.length));
     const isNull = !isTrue && !isFalse && textAfterCol.toLowerCase().startsWith("null".slice(0, textAfterCol.length));
+    const insertAt = insertNewAtPath !== undefined ? insertNewAtPath : Path.next(path);
     if (isTrue || isFalse || isNull) {
-        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected bool from '${textAfterCol}'`);
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected bool from '${textAfterCol}'`);
         const newText = JSON.stringify(isNull ? null : isTrue);
         SlateEditor.withoutNormalizing(editor, () => {
             Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-            Transforms.insertNodes(editor, { type: 'JsonBool', children: [{ text: newText }] }, { at: Path.next(path) });
+            let newNodes: Node[] = [{ type: 'JsonBool', children: [{ text: newText }] }];
+            if (insertEmptyJsonSyntax) {
+                newNodes.push({ type: 'JsonSyntax', text: "" });
+            }
+            Transforms.insertNodes(editor, newNodes, { at: insertAt });
         });
-        const pathNext = Path.next(path).concat([0]);
-        console.log(`withJsonElements.normalizeNode: rule #3: going to select ${pathNext}:1-${newText.length}`);
+        const pathNext = insertAt.concat([0]);
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: going to select ${pathNext}:1-${newText.length}`);
         Transforms.select(editor, { anchor: { path: pathNext, offset: 1 }, focus: { path: pathNext, offset: newText.length } });
         return true;
     } else if (textAfterCol === '"') {
-        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected string from '${textAfterCol}'`);
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected string from '${textAfterCol}'`);
         SlateEditor.withoutNormalizing(editor, () => {
             Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-            Transforms.insertNodes(editor, { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }, { at: Path.next(path) });
+            Transforms.insertNodes(editor, { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }, { at: insertAt });
         });
-        const anchor = { path: Path.next(path).concat([1]), offset: 0 };
-        const focus = { path: Path.next(path).concat([2]), offset: 1 };
-        console.log(`withJsonElements.normalizeNode: rule #3: going to select ${anchor}-${focus}:0-6`);
+        const anchor = { path: insertAt.concat([1]), offset: 0 };
+        const focus = { path: insertAt.concat([2]), offset: 1 };
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
         Transforms.select(editor, { anchor, focus });
         return true;
     } else if (textAfterCol === '{') {
-        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected object from '${textAfterCol}'`);
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected object from '${textAfterCol}'`);
         SlateEditor.withoutNormalizing(editor, () => {
             Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-            Transforms.insertNodes(editor, { 'type': 'JsonObject', children: [{ type: 'JsonSyntax', text: '{' }, { type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }, { type: 'JsonSyntax', text: '}' }] }, { at: Path.next(path) });
+            Transforms.insertNodes(editor, { 'type': 'JsonObject', children: [{ type: 'JsonSyntax', text: '{' }, { type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }, { type: 'JsonSyntax', text: '}' }] }, { at: insertAt });
         });
-        const pathNext = Path.next(path).concat([1, 1]);
-        console.log(`withJsonElements.normalizeNode: rule #3: going to select ${pathNext}:0-3`);
-        Transforms.select(editor, { anchor: { path: pathNext, offset: 0 }, focus: { path: pathNext, offset: 3 } });
+        const anchor = { path: insertAt.concat([1, 0]), offset: 0 };
+        const focus = { path: insertAt.concat([2]), offset: 1 };
+        //console.log(`withJsonElements.normalizeJsonSyntax: rule #3: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
+        //const pathNext = Path.next(path).concat([1, 1]);
+        Transforms.select(editor, { anchor, focus });
         return true;
     } else if (textAfterCol.startsWith('-') || (/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g).test(textAfterCol)) {
         SlateEditor.withoutNormalizing(editor, () => {
             Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-            Transforms.insertNodes(editor, { type: 'JsonNumber', children: [{ text: textAfterCol }] }, { at: Path.next(path) });
+            Transforms.insertNodes(editor, { type: 'JsonNumber', children: [{ text: textAfterCol }] }, { at: insertAt });
         });
-        const pathNext = Path.next(path).concat([0]);
+        const pathNext = insertAt.concat([0]);
         Transforms.select(editor, { anchor: { path: pathNext, offset: 1 }, focus: { path: pathNext, offset: textAfterCol.length } });
 
         return true;
@@ -177,7 +252,7 @@ const withJsonElements = (editor: ReactEditor) => {
 
     editor.normalizeNode = ([node, path]) => {
         const type = 'type' in node ? node.type : undefined;
-        console.log(`withJsonElements.normalizeNode(node.type=${type} path=${JSON.stringify(path)}) text=${Node.string(node).slice(0, 20)}...`);
+        //console.log(`withJsonElements.normalizeNode(node.type=${type} path=${JSON.stringify(path)}) text=${Node.string(node).slice(0, 20)}...`);
 
         const parent = path.length > 0 ? Node.parent(editor, path) : undefined;
         const parentType = parent && 'type' in parent ? parent.type : undefined;
@@ -186,7 +261,7 @@ const withJsonElements = (editor: ReactEditor) => {
         if (type === 'JsonSyntax' && parentType === 'JsonMember') {
             const text = Node.string(node);
             let matches;
-            if (text.match(/^\s*,\s*$/g)) {
+            if (text.match(/^\s*,\s*$/g)) { // ' , ' 
                 console.log(`withJsonElements.normalizeNode: rule #1: text='${text}'`);
                 SlateEditor.withoutNormalizing(editor, () => {
                     // setNodes skips children and text: Transforms.setNodes(editor, { text: 'foo' }, { at: path }); // this one with empty text
@@ -209,40 +284,29 @@ const withJsonElements = (editor: ReactEditor) => {
                     // starting with: " -> String
                     // starting with: { -> Object
                     // starting with: [ -> Array
-                    console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol='${textAfterCol}' isLast=${isLast}`);
-                    if (normalizeJsonSyntax(editor, path, text, textAfterCol)) { return; }
-                    /*
-                    const isTrue = textAfterCol.toLowerCase().startsWith("true".slice(0, textAfterCol.length));
-                    const isFalse = !isTrue && textAfterCol.toLowerCase().startsWith("false".slice(0, textAfterCol.length));
-                    const isNull = !isTrue && !isFalse && textAfterCol.toLowerCase().startsWith("null".slice(0, textAfterCol.length));
-                    if (isTrue || isFalse || isNull) {
-                        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected bool from '${textAfterCol}'`);
-                        SlateEditor.withoutNormalizing(editor, () => {
-                            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-                            Transforms.insertNodes(editor, { type: 'JsonBool', children: [{ text: JSON.stringify(isNull ? null : isTrue) }] }, { at: Path.next(path) });
-                        });
-                    } else if (textAfterCol === '"') {
-                        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected string from '${textAfterCol}'`);
-                        SlateEditor.withoutNormalizing(editor, () => {
-                            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-                            Transforms.insertNodes(editor, { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }, { at: Path.next(path) });
-                        });
-                        const pathNext = Path.next(path).concat([1]);
-                        console.log(`withJsonElements.normalizeNode: rule #3: going to select ${pathNext}:0-6`);
-                        Transforms.select(editor, { anchor: { path: pathNext, offset: 0 }, focus: { path: pathNext, offset: 6 } });
-                    } else if (textAfterCol === '{') {
-                        console.log(`withJsonElements.normalizeNode: rule #3: textAfterCol detected object from '${textAfterCol}'`);
-                        SlateEditor.withoutNormalizing(editor, () => {
-                            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-                            Transforms.insertNodes(editor, { 'type': 'JsonObject', children: [{ type: 'JsonSyntax', text: '{' }, { type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }, { type: 'JsonSyntax', text: '}' }] }, { at: Path.next(path) });
-                        });
-                        const pathNext = Path.next(path).concat([1, 1]);
-                        console.log(`withJsonElements.normalizeNode: rule #3: going to select ${pathNext}:0-3`);
-                        Transforms.select(editor, { anchor: { path: pathNext, offset: 0 }, focus: { path: pathNext, offset: 3 } });
-                    }*/
+                    //const insertNewAtPath = Path.next(path);
+                    console.log(`withJsonElements.normalizeNode: ${path} rule #3: textAfterCol='${textAfterCol}' isLast=${isLast}`);// insertNewAtPath=${insertNewAtPath}`);
+                    if (normalizeJsonSyntax(editor, path, text, textAfterCol /*, false, insertNewAtPath*/)) { return; }
                 } else {
                     console.warn(`withJsonElements.normalizeNode: rule #3: textAfterCol='${textAfterCol}' isLast=${isLast}: how to handle?`);
                     // overwrite if selected?
+                }
+            } else if (text.match(/^\s*}\s*/g)) { // only closing bracket?
+                const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]) || path[path.length - 1] >= 4;// fails sometimes if a text:"" was added automatically...;
+                console.log(`withJsonElements.normalizeNode: ${path} rule #6: text='${text}' isLast=${isLast}`);
+                if (isLast) {
+                    const hasClosingBracket = Node.string(Node.descendant(editor, Path.next(Path.parent(path)))).trimStart().length > 0;
+                    console.log(`withJsonElements.normalizeNode: rule #6: text='${text}' isLast=${isLast} hasClosingBracket=${hasClosingBracket}`);
+                    if (!hasClosingBracket) {
+                        // make this the closing bracket:
+                        SlateEditor.withoutNormalizing(editor, () => {
+                            Transforms.delete(editor, { at: path });
+                            Transforms.insertText(editor, "}", { at: Path.next(Path.parent(path)) });
+                            Transforms.move(editor, { distance: 1 });
+                        });
+                        return;
+                    }
+
                 }
             }
         }
@@ -250,20 +314,75 @@ const withJsonElements = (editor: ReactEditor) => {
         if (type === 'JsonSyntax' && parentType === 'JsonObject') {
             const text = Node.string(node);
             if (text.match(/^\s*,\s*"/g)) {
-                console.log(`withJsonElements.normalizeNode: rule #2: text='${text}'`);
+                console.log(`withJsonElements.normalizeNode: ${path} rule #2: text='${text}'`);
                 SlateEditor.withoutNormalizing(editor, () => {
                     Transforms.delete(editor, { at: { anchor: { path, offset: text.indexOf(',') }, focus: { path: path, offset: text.indexOf('"') + 1 } } });
                     // todo if at start or at the end don't enter the JsonSyntax:,
-                    Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: ',' }, { type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }, { type: 'JsonSyntax', text: ',' }], { at: path });
+                    Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: ',' }, { type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }, { type: 'JsonSyntax', text: '' }], { at: path });
                 });
-                const pathNext = Path.next(path).concat([1]);
-                console.log(`withJsonElements.normalizeNode: rule #2: going to select ${pathNext}:0-3`);
-                Transforms.select(editor, { anchor: { path: pathNext, offset: 0 }, focus: { path: pathNext, offset: 3 } });
+                const anchor = { path: Path.next(path).concat([1]), offset: 0 };
+                const focus = { path: Path.next(path).concat([2]), offset: 2 };
+                console.log(`withJsonElements.normalizeNode: rule #2: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
+                Transforms.select(editor, { anchor, focus });
                 return;
             }
         }
         // #4 like #2 but at start of an object after the {
-        // todo
+        if (type === 'JsonSyntax' && parentType === 'JsonMember') {
+            const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
+            if (isLast) {
+                const text = Node.string(node);
+                if (text.match(/^\s*"\s*$/g)) {
+                    console.log(`withJsonElements.normalizeNode:${path} rule #4.1: text='${text}'`);
+                    SlateEditor.withoutNormalizing(editor, () => {
+                        Transforms.insertNodes(editor, [{ type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }], { at: Path.next(path) });
+                    });
+                    const anchor = { path: Path.next(path), offset: 0 };
+                    const focus = { path: Path.next(Path.next(path)), offset: 2 };
+                    console.log(`withJsonElements.normalizeNode: rule #4.1: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
+                    Transforms.select(editor, { anchor, focus });
+                    return;
+                }
+            }
+        }
+
+        if (type === 'JsonKey' && parentType === 'JsonMember') {
+            const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
+            if (isLast) {
+                const text = Node.string(node);
+                if (text.match(/^\s*"\s*$/g)) {
+                    console.log(`withJsonElements.normalizeNode: rule #4.3: text='${text}'`);
+                    SlateEditor.withoutNormalizing(editor, () => {
+                        Transforms.delete(editor, { at: { anchor: { path, offset: text.indexOf('"') }, focus: { path: path, offset: text.length } } });
+                        Transforms.insertNodes(editor, [{ type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }] }], { at: path });
+                    });
+                    //const anchor = { path: path.concat([1]), offset: 0 };
+                    const anchor = { path: path, offset: text.indexOf('"') };
+                    //const focus = { path: path.concat([2]), offset: 2 };
+                    const focus = { path: Path.next(path), offset: 0 };
+                    console.log(`withJsonElements.normalizeNode: rule #4.3: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
+                    Transforms.select(editor, { anchor, focus });
+                    return;
+                }
+
+                if (text.endsWith('"') && !text.endsWith('\\"')) {
+                    const text = Node.string(node);
+                    console.log(`withJsonElements.normalizeNode: rule #4.2: text='${text}'`);
+                    SlateEditor.withoutNormalizing(editor, () => {
+                        // Transforms.setNodes(editor, { isJsonUnescaped: true }, { at: path }); todo?
+                        Transforms.delete(editor, { at: { anchor: { path, offset: text.length - 1 }, focus: { path: path, offset: text.length } } });
+                        Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: '":' }], { at: Path.next(path) });
+                        Transforms.move(editor, { distance: 1 });
+                    });
+                    const anchor = { path: Path.next(path), offset: 1 };
+                    const focus = { path: Path.next(path), offset: 2 };
+                    console.log(`withJsonElements.normalizeNode: rule #4.2: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
+                    Transforms.select(editor, { anchor, focus });
+                    return;
+                }
+
+            }
+        }
 
         // #5 use case empty doc
         if (type === 'JsonSyntax' && parentType === 'JsonDoc') {
@@ -275,11 +394,11 @@ const withJsonElements = (editor: ReactEditor) => {
                 let matches;
                 if ((matches = (/^\s*(\S+)/g).exec(text))) {
                     const textAfterWs = matches[1];
-                    console.log(`withJsonElements.normalizeNode: rule #5: textAfterWs='${textAfterWs}'`);
+                    //console.log(`withJsonElements.normalizeNode: rule #5: textAfterWs='${textAfterWs}'`);
                     if (normalizeJsonSyntax(editor, path, text, textAfterWs)) { return; }
                 }
             } else {
-                console.log(`withJsonElements.normalizeNode: rule #5: text='${Node.string(node)}' isFirst=${isFirst} isLast=${isLast}`);
+                //console.log(`withJsonElements.normalizeNode: rule #5: text='${Node.string(node)}' isFirst=${isFirst} isLast=${isLast}`);
             }
         }
         if (type === undefined && parentType === 'JsonDoc') {
@@ -291,7 +410,19 @@ const withJsonElements = (editor: ReactEditor) => {
                 Transforms.setNodes(editor, { type: 'JsonSyntax' }, { at: path });
                 return;
             } else {
-                console.log(`withJsonElements.normalizeNode: rule #5.2: text='${Node.string(node)}' isFirst=${isFirst} isLast=${isLast}`, Node.get(editor, Path.parent(path)));
+                //console.log(`withJsonElements.normalizeNode: rule #5.2: text='${Node.string(node)}' isFirst=${isFirst} isLast=${isLast}`, Node.get(editor, Path.parent(path)));
+            }
+        }
+        if (type === undefined && parentType === 'JsonMember') {
+            const isFirst = Path.equals(path, Node.first(editor, Path.parent(path))[1]);
+            const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
+            if (isFirst && isLast) { // single member yet
+                const isEmpty = Node.string(node).trimStart().length === 0;
+                if (isEmpty) {
+                    // delete the full parent=JsonMember (as its empty)
+                    Transforms.removeNodes(editor, { at: Path.parent(path) });
+                    return;
+                }
             }
         }
 
@@ -299,22 +430,88 @@ const withJsonElements = (editor: ReactEditor) => {
         if (type === 'JsonString') {
             const d = node as Descendant;
             if (!isValidJson(d)) {
-                if ('children' in d && d.children.length === 2) {
-                    const c1 = d.children[0];
-                    const c2 = d.children[1];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
-                    const c2Valid = !('type' in c2);
-                    if (c1Valid && c2Valid && c2.text.endsWith('"') && !c2.text.endsWith('\\"')) {
+                if ('children' in d) {
+                    if (d.children.length === 2) {
+                        const c1 = d.children[0];
+                        const c2 = d.children[1];
+                        const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
+                        const c2Valid = !('type' in c2);
+                        if (c1Valid && c2Valid && c2.text.endsWith('"') && !c2.text.endsWith('\\"')) {
+                            const text = Node.string(node);
+                            console.log(`withJsonElements.normalizeNode: rule #6: text='${text}'`);
+                            SlateEditor.withoutNormalizing(editor, () => {
+                                Transforms.setNodes(editor, { isJsonUnescaped: true }, { at: path });
+                                const unescaped = JSON.parse('"' + c2.text);
+                                Transforms.insertText(editor, unescaped, { at: { anchor: { path: path.concat([1]), offset: 0 }, focus: { path: path.concat([1]), offset: 0 } } });
+                                Transforms.delete(editor, { at: { anchor: { path: path.concat([1]), offset: unescaped.length }, focus: { path: path.concat([1]), offset: unescaped.length + c2.text.length } } });
+                                // Transforms.delete(editor, { at: { anchor: { path: path.concat([1]), offset: c2.text.length - 1 }, focus: { path: path.concat([1]), offset: c2.text.length } } });
+                                Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: '"' }], { at: path.concat([2]) });
+                                Transforms.move(editor, { distance: 1 });
+                            });
+                            return;
+                        }
+                    } else if (d.children.length === 1) { // use-case chars behind "" or correction of single JsonSyntax: like "a" which fell into a single element
                         const text = Node.string(node);
-                        console.log(`withJsonElements.normalizeNode: rule #6: text='${text}'`);
+                        if (text.length > 2) {
+                            const startsProper = text.startsWith('"');
+                            const endsProper = text.endsWith('"') && !text.endsWith('\\"');
+                            if (startsProper && endsProper) {
+                                // split into JsonSyntax ", text, JsonSyntax "
+                                console.log(`withJsonElements.normalizeNode: rule #6.2: text='${text}'`);
+                                SlateEditor.withoutNormalizing(editor, () => {
+                                    Transforms.setNodes(editor, { isJsonUnescaped: true }, { at: path });
+                                    const unescaped = JSON.parse('"' + text.slice(1, text.length - 1) + '"');
+                                    Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: 1 }, focus: { path: path.concat([0]), offset: text.length } } });
+                                    Transforms.insertNodes(editor, [{ text: unescaped }, { type: 'JsonSyntax', text: '"' }], { at: path.concat([1]) });
+                                    Transforms.move(editor, { distance: unescaped.length + 1 });
+                                });
+                                return;
+                            }
+                            if (startsProper && text.startsWith('""')) { // chars after empty string
+                                console.log(`withJsonElements.normalizeNode: rule #6.3: text='${text}'`);
+                                // split the rest away
+                                const expectedLength = 2;
+                                SlateEditor.withoutNormalizing(editor, () => {
+                                    Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
+                                    Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                                });
+                                return;
+                            }
+                        }
+                    } else if (d.children.length === 3) { // chars behind?
+                        const c3 = d.children[2] as JsonSyntax;
+                        const text = c3.text;
+                        if (text.length > 1) {
+                            console.log(`withJsonElements.normalizeNode: rule #6.4: text='${text}'`);
+                            // split the rest away
+                            const expectedLength = 1;
+                            SlateEditor.withoutNormalizing(editor, () => {
+                                Transforms.delete(editor, { at: { anchor: { path: path.concat([2]), offset: expectedLength }, focus: { path: path.concat([2]), offset: text.length } } })
+                                Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                            });
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (type === 'JsonBool') {
+            const d = node as Descendant;
+            if (!isValidJson(d)) {
+                if ('children' in d && d.children.length === 1) {
+                    // any chars behind?
+                    const text = Node.string(node);
+                    const isTrue = text.toLowerCase().startsWith("true");
+                    const isFalse = !isTrue && text.toLowerCase().startsWith("false");
+                    const isNull = !isTrue && !isFalse && text.toLowerCase().startsWith("null");
+                    if (isTrue || isFalse || isNull) {
+                        console.log(`withJsonElements.normalizeNode: rule #7: text='${text}'`);
+                        // split the rest away
+                        const expectedLength = isFalse ? 5 : 4;
                         SlateEditor.withoutNormalizing(editor, () => {
-                            Transforms.setNodes(editor, { isJsonUnescaped: true }, { at: path });
-                            const unescaped = JSON.parse('"' + c2.text);
-                            Transforms.insertText(editor, unescaped, { at: { anchor: { path: path.concat([1]), offset: 0 }, focus: { path: path.concat([1]), offset: 0 } } });
-                            Transforms.delete(editor, { at: { anchor: { path: path.concat([1]), offset: unescaped.length }, focus: { path: path.concat([1]), offset: unescaped.length + c2.text.length } } });
-                            // Transforms.delete(editor, { at: { anchor: { path: path.concat([1]), offset: c2.text.length - 1 }, focus: { path: path.concat([1]), offset: c2.text.length } } });
-                            Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: '"' }], { at: path.concat([2]) });
-                            Transforms.move(editor, { distance: 1 });
+                            Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
+                            Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
                         });
                         return;
                     }
@@ -322,26 +519,83 @@ const withJsonElements = (editor: ReactEditor) => {
             }
         }
 
-        // #1 if type is empty and text ends with ',' and parent.type == JsonMember -> change into 'JsonSyntax', text ',' and add new JsonMember with children JsonSyntax :''
-        /*        if (path.length > 0 && type === undefined) {
-                const text = Node.string(node);
-                if (text.match(/^\s*,\s*$/g)) {
-                    const parent = Node.parent(editor, path);
-                    if ('type' in parent && parent.type === 'JsonMember') {
-                        console.log(`withJsonElements.normalizeNode: rule #1old: text='${text}'`);
+        if (type === 'JsonNumber') {
+            const d = node as Descendant;
+            if (!isValidJson(d)) {
+                if ('children' in d && d.children.length === 1) {
+                    // any chars behind?
+                    const text = Node.string(node);
+                    const match = (/([{},"\[\]:]+)$/g).exec(text);
+                    if (match && match.length > 0) {
+                        const textAfter = match[1];
+                        console.log(`withJsonElements.normalizeNode: rule #9: text='${text}' textAfter='${textAfter}'`);
+                        // split the rest away
+                        const expectedLength = text.length - textAfter.length;
                         SlateEditor.withoutNormalizing(editor, () => {
-                            Transforms.setNodes(editor, { text: 'foo' }, { at: path }); // this one with empty text
-                            Transforms.insertNodes(editor, { type: 'JsonSyntax', text: ',' }, { at: Path.next(Path.parent(path)) });
-                            // todo set selection...
+                            Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
+                            Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
                         });
                         return;
                     }
                 }
-            }*/
-        // #2 if type JsonSyntax member of JsonMember and text ends with ',"' -> split into JsonMem 
-        //if (type === 'JsonSyntax')
-        // #3 if type JsonSyntax member of JsonString...
-        // #4 JsonString ^".*",$ -> , as sep.
+            }
+        }
+
+        if (type === 'JsonObject') {
+            const d = node as Descendant;
+            if (!isValidJson(d)) {
+                if ('children' in d) {
+                    if (d.children.length === 1) { // special case for empty obj
+                        // any chars behind?
+                        const text = Node.string(node);
+                        const match = (/^\s*{\s*}([{},"\[\]:]+)$/g).exec(text);
+                        if (match && match.length > 0) {
+                            const textAfter = match[1];
+                            console.log(`withJsonElements.normalizeNode: rule #10: text='${text}' textAfter='${textAfter}'`);
+                            // split the rest away
+                            const expectedLength = text.length - textAfter.length;
+                            SlateEditor.withoutNormalizing(editor, () => {
+                                Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
+                                Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                            });
+                            return;
+                        }
+                    } else if (d.children.length >= 3) {
+                        // chars behind last JsonSyntax }?
+                        const cl = d.children[d.children.length - 1];
+                        if ('type' in cl && cl.type === 'JsonSyntax') {
+                            const match = (/^\s*}\s*([{},"\[\]:]+)$/g).exec(cl.text);
+                            if (match && match.length > 0) {
+                                const textAfter = match[1];
+                                console.log(`withJsonElements.normalizeNode: rule #10.2: text='${cl.text}' textAfter='${textAfter}'`);
+                                // split the rest away
+                                const expectedLength = cl.text.length - textAfter.length;
+                                SlateEditor.withoutNormalizing(editor, () => {
+                                    Transforms.delete(editor, { at: { anchor: { path: path.concat([d.children.length - 1]), offset: expectedLength }, focus: { path: path.concat([d.children.length - 1]), offset: cl.text.length } } })
+                                    Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: cl.text.slice(expectedLength) }], { at: Path.next(path) });
+                                });
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (type === 'JsonMember') {
+            const d = node as JsonMember;
+            if (!isValidMember(d)) {
+                // more than 5 member?
+                if (d.children.length > 5) {
+                    console.log(`withJsonElements.normalizeNode:${path} rule #8:`);
+                    Transforms.moveNodes(editor, { at: path.concat([5]), to: Path.next(path) });
+                    return;
+                } else if (d.children.length === 5) {
+                    // last child should be empty...
+                    //if ()
+                }
+            }
+        }
 
         return normalizeNode([node, path]);
     }
@@ -367,6 +621,7 @@ const desValue = (value: any): JsonValue | undefined => {
     // todo null...
     switch (typeof value) {
         case 'string':
+            if (value.length === 0) return { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '""' }] };
             return { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: value }, { type: 'JsonSyntax', text: '"' }] }
         case 'boolean':
             return { type: 'JsonBool', children: [{ text: JSON.stringify(value) }] }
@@ -417,20 +672,44 @@ const serValue = (d: Descendant) => {
             return undefined;
         }
         case 'JsonString': {
-            if ('children' in d && d.children.length === 3) {
-                const c1 = d.children[0];
-                const c2 = d.children[1];
-                const c3 = d.children[2];
-                const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
-                const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '"';
-                const c2Valid = !('type' in c2);
-                if (!c1Valid && c2Valid && c3Valid) return undefined;
-                return d.isJsonUnescaped ? c2.text : JSON.parse(c1.text + c2.text + c3.text);
-            } else return undefined;
+            if ('children' in d) {
+                if (d.children.length === 3) {
+                    const c1 = d.children[0];
+                    const c2 = d.children[1];
+                    const c3 = d.children[2];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
+                    const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '"';
+                    const c2Valid = !('type' in c2);
+                    if (!c1Valid && c2Valid && c3Valid) return undefined;
+                    return d.isJsonUnescaped ? c2.text : JSON.parse(c1.text + c2.text + c3.text);
+                } else if (d.children.length === 1) {
+                    return ""; // only empty JsonSyntax ""
+                }
+            }
+            return undefined;
         }
         case 'JsonNumber': {
             if ('children' in d && d.children.length === 1) {
                 return Number(d.children[0].text);
+            }
+            return undefined
+        }
+        case 'JsonObject': {
+            if ('children' in d) {
+                if (d.children.length === 1) {
+                    return {};
+                } else {
+                    // todo serialize member
+                    let obj: any = {};
+                    for (let i = 1; i < d.children.length; ++i) { // we skip the first ...
+                        let c = d.children[i];
+                        if (c.type === 'JsonSyntax') continue;
+                        if (c.type === 'JsonMember') {
+                            obj[(c.children[1] as JsonKey).text] = serValue(c.children[3]);
+                        }
+                    }
+                    return obj;
+                }
             }
             return undefined
         }
@@ -456,6 +735,27 @@ export const serialize = (value: Descendant[]) => {
     }
     return undefined;
 };
+
+const debugObj = (v: any, indent: number): string => {
+    const indentOffset = (' '.repeat(indent));
+    if (Array.isArray(v)) {
+        return indentOffset + v.map(e => debugObj(e, indent)).join('\n' + indentOffset);
+    }
+    if (typeof (v) === 'object' && 'children' in v) {
+        return indentOffset + `${v.type}:[\n` + debugObj(v.children, indent + 1);
+    }
+    if (typeof (v) === 'object' && 'type' in v) {
+        return indentOffset + `${v.type}: '${v.text}'`;
+    }
+    if (typeof (v) === 'object' && 'text' in v) {
+        return indentOffset + `text: '${v.text}'`;
+    }
+    return indentOffset + JSON.stringify(v, undefined)
+}
+
+const debugHtml = (value: Descendant[]) => {
+    return debugObj((value[0] as any).children, 0);
+}
 
 export default function Editor({ object, onChange, getEditor }: { object: any, onChange?: ((v: any) => void), getEditor?: (ed: ReactEditor) => void }) {
     const editor = useMemo(() => withJsonElements(withHistory(withReact(createEditor()))), []);
@@ -525,12 +825,19 @@ export default function Editor({ object, onChange, getEditor }: { object: any, o
     }
 
     return (
-        <Slate editor={editor} value={document} /*onChange={value => { console.log('onChange...'); setDocument(value); const serialized = serialize(value); if (serialized !== undefined) { onChange(serialized); } }}*/>
+        <React.Fragment>
+            <Slate editor={editor} value={document} onChange={value => { /*console.log('onChange...'); */setDocument(value); }} /*const serialized = serialize(value); if (serialized !== undefined) { onChange(serialized); } }}*/>
             <Editable
                 renderElement={renderElement}
                 renderLeaf={renderLeaf}
                 onKeyDown={onKeyDown}
             />
         </Slate>
+            <pre style={{ whiteSpace: 'pre', textAlign: 'left' }}>
+                <code>
+                    {debugHtml(document)}
+                </code>
+            </pre>
+        </React.Fragment>
     );
 }
