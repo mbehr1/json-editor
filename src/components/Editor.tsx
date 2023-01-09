@@ -14,7 +14,7 @@ type JsonObject = {
 
 type JsonArray = {
     type: 'JsonArray',
-    children: JsonValue[],
+    children: (JsonSyntax | JsonValue)[],
 };
 
 type JsonMember = {
@@ -131,29 +131,60 @@ export const isValidJson = (d: Descendant): boolean => {
                         if (nrMembers === 0) {
                             toRet = true;
                         } else {
-                            if (nrMembers === 1) {
-                                const c = d.children[1];
-                                toRet = c.type === 'JsonMember' && isValidMember(c);
-                            } else {
-                                // iterate:
-                                let allValid = true;
-                                for (let i = 1; i < d.children.length - 1; ++i) { // all but first, last
-                                    const c = d.children[i];
-                                    let cValid = false;
-                                    if (i % 2 === 1) { // expect JsonMember
-                                        cValid = 'type' in c && c.type === 'JsonMember' && isValidMember(c);
-                                    } else { // expect JsonSyntax ,
-                                        cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
-                                    }
-                                    if (!cValid) {
-                                        allValid = false;
-                                        break;
-                                    }
+                            // iterate:
+                            let allValid = true;
+                            for (let i = 1; i < d.children.length - 1; ++i) { // all but first, last
+                                const c = d.children[i];
+                                let cValid = false;
+                                if (i % 2 === 1) { // expect JsonMember
+                                    cValid = 'type' in c && c.type === 'JsonMember' && isValidMember(c);
+                                } else { // expect JsonSyntax ,
+                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
                                 }
-                                toRet = allValid;
+                                if (!cValid) {
+                                    allValid = false;
+                                    break;
+                                }
                             }
+                            toRet = allValid;
                         }
                     }
+                }
+            break;
+        case 'JsonArray':
+            if ('children' in d) {
+                if (d.children.length === 1) {
+                    const c1 = d.children[0];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trimStart().trimEnd() === '[]';
+                    toRet = c1Valid;
+                } else if (d.children.length >= 3) {
+                    const c1 = d.children[0];
+                    const cl = d.children[d.children.length - 1];
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '[';
+                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text === ']';
+                    if (c1Valid && clValid) {
+                        let nrMembers = d.children.length - 2;
+                        if (nrMembers === 0) {
+                            toRet = true;
+                        } else { // nrMembers>=1
+                            let allValid = true;
+                            for (let i = 1; i < d.children.length - 1; ++i) { // all but first, last
+                                const c = d.children[i];
+                                let cValid = false;
+                                if (i % 2 === 1) { // expect JsonValue
+                                    cValid = 'type' in c && c.type !== 'JsonSyntax' && isValidJson(c);
+                                } else { // expect JsonSyntax ,
+                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
+                                }
+                                if (!cValid) {
+                                    allValid = false;
+                                    break;
+                                }
+                            }
+                            toRet = allValid;
+                        }
+                    }
+                }
             }
             break;
         case 'JsonDoc': {
@@ -222,6 +253,17 @@ const normalizeJsonSyntax = (editor: ReactEditor, path: Path, text: string, text
         //const pathNext = Path.next(path).concat([1, 1]);
         Transforms.select(editor, { anchor, focus });
         return true;
+    } else if (textAfterCol === '[') {
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected array from '${textAfterCol}'`);
+        SlateEditor.withoutNormalizing(editor, () => {
+            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
+            Transforms.insertNodes(editor, { 'type': 'JsonArray', children: [{ type: 'JsonSyntax', text: '[]' }] }, { at: insertAt });
+        });
+        const anchor = { path: insertAt.concat([0]), offset: 1 };
+        const focus = { path: insertAt.concat([0]), offset: 2 };
+        Transforms.select(editor, { anchor, focus });
+        return true;
+
     } else if (textAfterCol.startsWith('-') || (/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g).test(textAfterCol)) {
         SlateEditor.withoutNormalizing(editor, () => {
             Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
@@ -257,6 +299,33 @@ const withJsonElements = (editor: ReactEditor) => {
         const parent = path.length > 0 ? Node.parent(editor, path) : undefined;
         const parentType = parent && 'type' in parent ? parent.type : undefined;
         // rules:
+        // #11 array rules:
+        if (type === 'JsonSyntax' && parentType === 'JsonArray') {
+            const isFirst = Path.equals(path, Node.first(editor, Path.parent(path))[1]);
+            const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
+            if (isFirst && isLast) { // single member yet
+                const text = Node.string(node);
+                console.log(`withJsonElements.normalizeNode: rule #11: text='${text}'`);
+                let matches;
+                if ((matches = (/^\s*\[\s*(\S+)$/g).exec(text))) {
+                    const textAfterWs = matches[1];
+                    console.log(`withJsonElements.normalizeNode: rule #11: textAfterWs='${textAfterWs}'`);
+                    if (normalizeJsonSyntax(editor, path, text, textAfterWs)) { return; }
+                }
+            } else if (isLast) {
+                const text = Node.string(node);
+                console.log(`withJsonElements.normalizeNode: rule #11.2: text='${text}'`);
+                let matches;
+                if ((matches = (/^\s*,\s*(\S+)$/g).exec(text))) {
+                    const textAfterWs = matches[1];
+                    console.log(`withJsonElements.normalizeNode: rule #11.2: textAfterWs='${textAfterWs}'`);
+                    if (normalizeJsonSyntax(editor, path, text, textAfterWs)) { return; }
+                }
+                //console.log(`withJsonElements.normalizeNode: rule #5: text='${Node.string(node)}' isFirst=${isFirst} isLast=${isLast}`);
+            }
+        }
+
+
         // #1 use case: "adding members to an object starting after a member with ,"
         if (type === 'JsonSyntax' && parentType === 'JsonMember') {
             const text = Node.string(node);
@@ -512,6 +581,7 @@ const withJsonElements = (editor: ReactEditor) => {
                         SlateEditor.withoutNormalizing(editor, () => {
                             Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
                             Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                            Transforms.move(editor, { distance: 1 });
                         });
                         return;
                     }
@@ -629,19 +699,32 @@ const desValue = (value: any): JsonValue | undefined => {
         case 'number':
             return { type: 'JsonNumber', children: [{ text: JSON.stringify(value) }] }
         case 'object':
-            let newE: JsonObject = { 'type': 'JsonObject', children: [{ type: 'JsonSyntax', text: '{' }] };
-            Object.keys(value).forEach((key, index) => {
-                const v = desValue(value[key]);
-                if (v !== undefined) {
-                    if (index > 0) {
-                        newE.children.push({ type: 'JsonSyntax', text: ',' });
+            if (!Array.isArray(value)) {
+                let newE: JsonObject = { 'type': 'JsonObject', children: [{ type: 'JsonSyntax', text: '{' }] };
+                Object.keys(value).forEach((key, index) => {
+                    const v = desValue(value[key]);
+                    if (v !== undefined) {
+                        if (index > 0) {
+                            newE.children.push({ type: 'JsonSyntax', text: ',' });
+                        }
+                        newE.children.push({ type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: key }, { type: 'JsonSyntax', text: '":' }, v, { type: 'JsonSyntax', text: '' }] });
                     }
-                    newE.children.push({ type: 'JsonMember', children: [{ type: 'JsonSyntax', text: '"' }, { type: 'JsonKey', text: key }, { type: 'JsonSyntax', text: '":' }, v, { type: 'JsonSyntax', text: '' }] });
+                });
+                newE.children.push({ type: 'JsonSyntax', text: '}' });
+                return newE;
+            } else { // Array
+                const arrLen = value.length;
+                let newE: JsonArray = arrLen > 0 ? { 'type': 'JsonArray', children: [{ type: 'JsonSyntax', text: '[' }] } : { 'type': 'JsonArray', children: [{ type: 'JsonSyntax', text: '[]' }] };
+                value.forEach((c, index) => {
+                    if (index > 0) { newE.children.push({ type: 'JsonSyntax', text: ',' }); }
+                    let newC = desValue(c);
+                    if (newC !== undefined) newE.children.push(newC);
+                });
+                if (arrLen > 0) {
+                    newE.children.push({ type: 'JsonSyntax', text: ']' });
                 }
-            });
-            newE.children.push({ type: 'JsonSyntax', text: '}' });
-            return newE;
-        // todo Array
+                return newE;
+            }
         default:
             return { type: 'JsonBool', children: [{ text: 'null' }] }
     };
@@ -709,6 +792,22 @@ const serValue = (d: Descendant) => {
                         }
                     }
                     return obj;
+                }
+            }
+            return undefined
+        }
+        case 'JsonArray': {
+            if ('children' in d) {
+                if (d.children.length === 1) {
+                    return [];
+                } else {
+                    const arr: any[] = [];
+                    for (let i = 1; i < d.children.length; ++i) { // we skip the first ...
+                        let c = d.children[i];
+                        if (c.type === 'JsonSyntax') continue;
+                        arr.push(serValue(c));
+                    }
+                    return arr;
                 }
             }
             return undefined

@@ -61,9 +61,11 @@ test('editor enter valid jsons', async () => {
     await testInput(-42.5e-2)
     await testInputText('-42.5e-2', -42.5e-2, '-42.5e-2');
 
+    await testInput([])
+    await testInput([true])
+    await testInput([true, false, null])
+
     await testInput({})
-    //await testInputText('{"', {}, 'f')
-    //await testInputText('{"foo":true}', {}, 'f')
     await testInput({ foo: true }) // single member, bool
     await testInput({ foo: false })
     await testInput({ foo: null })
