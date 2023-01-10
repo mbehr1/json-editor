@@ -10,6 +10,84 @@ const createNodeMock = () => ({
     getRootNode: () => global.document,
 })
 
+const testInputText = async (editor: BaseEditor&ReactEditor, inputChars: string, expectedObj: any, expectedText: string) => {
+    console.warn(`testInputText :'${inputChars}'`, expectedObj);
+    // first: input char by char
+
+    // slate updates at next tick, so we need this to be async
+    await act(async () => {
+        //Transforms.splitNodes(editor, { at: { path: [0, 0], offset: 2 } })
+        Transforms.select(editor, { anchor: SlateEditor.start(editor, []), focus: SlateEditor.start(editor, []) });
+        console.log(`sending: '${inputChars.slice(0, 1)}'`);
+        Transforms.insertText(editor!, inputChars.slice(0, 1)); // , { at: firstPath });
+        for (let i = 1; i < inputChars.length; ++i) {
+            console.log(`sending: '${inputChars.slice(i, i + 1)}'`);
+            Transforms.insertText(editor!, inputChars.slice(i, i + 1));
+        }
+    })
+    console.log(`editor.children=${JSON.stringify(editor.children)}`);
+    //console.log(`expectedText='${expectedText}'`);
+    expect(editor.children.length).toBe(1);
+    expect(Node.string(editor)).toBe(expectedText);
+    expect(isValidJson(editor.children[0])).toBeTruthy();
+    const convObj = serialize(editor.children);
+    expect(convObj).toEqual(expectedObj);
+}
+
+type Op = {
+    op: string, // left/right or insert
+    times?: number,
+    data?: string, // for insert
+}
+
+type Ops = Op[];
+
+const testEdit = async (editor: BaseEditor&ReactEditor, ops: Ops, expectedObj: any, expectedText: string) =>{
+    await act(async () => {
+        for (const op of ops){
+            switch (op.op){
+                case 'left': // todo handle selection properly!
+                    Transforms.move(editor, {distance: op.times ? op.times : 1, unit:'character', reverse:true});
+                    break;
+                case 'right': // todo handle selection properly!
+                    Transforms.move(editor, {distance: op.times ? op.times : 1, unit:'character'});
+                    break;
+                case 'insert':
+                    expect(op.data).toBeTruthy();
+                    for (let i=0; i<(op.times ? op.times : 1); i++){
+                        console.log(`sending: '${op.data}'`);
+                        Transforms.insertText(editor!, op.data!);
+                    }
+                    break;
+                default:
+                    expect(false).toBeTruthy();
+            }
+        }
+    })
+    console.log(`editor.children=${JSON.stringify(editor.children)}`);
+    expect(editor.children.length).toBe(1);
+    expect(Node.string(editor)).toBe(expectedText);
+    expect(isValidJson(editor.children[0])).toBeTruthy();
+    const convObj = serialize(editor.children);
+    expect(convObj).toEqual(expectedObj);
+
+}
+
+test('editor edit existing', async ()=>{
+    let editor: (BaseEditor & ReactEditor) = withReact(createEditor());// only to avoid undefined issues...
+    await act(() => {
+        /*el =*/ create(
+        <Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }
+    )
+    })
+    expect(editor).toBeDefined()
+
+    //await testInputText(editor, 't', true, 'true')
+    //await testEdit(editor, [], true, 'true')
+    await testInputText(editor, '[true]', [true], '[true]')
+    await testEdit(editor, [{op:'left',times: 1}, {op:'insert', data: ',false'}], [true, false], '[true,false]');
+})
+
 test('editor enter valid jsons', async () => {
     let editor: (BaseEditor & ReactEditor) = withReact(createEditor());// only to avoid undefined issues...
 
