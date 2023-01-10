@@ -72,6 +72,7 @@ test('editor enter valid jsons', async () => {
     await testInput([[[],{}]])
     await testInput([[{},[]]])
     await testInput([1,2])
+    await testInput(["foo", false, null, [true, false]])
 
     await testInput({})
     await testInput({ foo: true }) // single member, bool

@@ -1,6 +1,6 @@
 import { Editable, Slate, withReact, ReactEditor, DefaultElement, RenderElementProps, RenderLeafProps } from "slate-react";
 import { isKeyHotkey } from "is-hotkey";
-import { createEditor, Descendant, BaseEditor, Range, Transforms, Node, Path, Editor as SlateEditor } from "slate";
+import { createEditor, Descendant, BaseEditor, Range, Transforms, Node, Path, Editor as SlateEditor, Selection } from "slate";
 import { useCallback, useMemo, useState } from "react";
 import { withHistory } from 'slate-history';
 
@@ -99,13 +99,13 @@ export const isValidJson = (d: Descendant): boolean => {
                     const c1 = d.children[0];
                     const c2 = d.children[1];
                     const c3 = d.children[2];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '"';
-                    const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text === '"';
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trimStart() === '"';
+                    const c3Valid = 'type' in c3 && c3.type === 'JsonSyntax' && c3.text.trimEnd() === '"';
                     const c2Valid = !('type' in c2);
                     toRet = c1Valid && c2Valid && c3Valid;
                 } else if (d.children.length === 1) { // special case for e.g. empty string
                     const c1 = d.children[0];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '""';
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trim() === '""';
                     toRet = c1Valid;
                 }
             }
@@ -114,15 +114,15 @@ export const isValidJson = (d: Descendant): boolean => {
             // special case: empty object -> single JsonSyntax with text {}
             if ('children' in d && d.children.length === 1) {
                 const c1 = d.children[0];
-                const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trimStart().trimEnd() === '{}';
+                const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && /^\s*{\s*}\s*$/.test(c1.text);
                 toRet = c1Valid;
             } else
                 // we expect the first and last to be a JsonSyntax with text {,}
                 if ('children' in d && d.children.length >= 2) {
                     const c1 = d.children[0];
                     const cl = d.children[d.children.length - 1];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '{';
-                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text === '}';
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trim() === '{';
+                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text.trim() === '}';
                     // console.log(`isValidJson(JsonObject: ${JSON.stringify(d)})...c1Valid=${c1Valid} clValid=${clValid}`);
                     if (c1Valid && clValid) {
                         // all children valid?
@@ -139,7 +139,7 @@ export const isValidJson = (d: Descendant): boolean => {
                                 if (i % 2 === 1) { // expect JsonMember
                                     cValid = 'type' in c && c.type === 'JsonMember' && isValidMember(c);
                                 } else { // expect JsonSyntax ,
-                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
+                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text.trim() === ',';
                                 }
                                 if (!cValid) {
                                     allValid = false;
@@ -155,13 +155,13 @@ export const isValidJson = (d: Descendant): boolean => {
             if ('children' in d) {
                 if (d.children.length === 1) {
                     const c1 = d.children[0];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trimStart().trimEnd() === '[]';
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && /^\s*\[\s*\]\s*$/.test(c1.text);
                     toRet = c1Valid;
                 } else if (d.children.length >= 3) {
                     const c1 = d.children[0];
                     const cl = d.children[d.children.length - 1];
-                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text === '[';
-                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text === ']';
+                    const c1Valid = 'type' in c1 && c1.type === 'JsonSyntax' && c1.text.trim() === '[';
+                    const clValid = 'type' in cl && cl.type === 'JsonSyntax' && cl.text.trim() === ']';
                     if (c1Valid && clValid) {
                         let nrMembers = d.children.length - 2;
                         if (nrMembers === 0) {
@@ -174,7 +174,7 @@ export const isValidJson = (d: Descendant): boolean => {
                                 if (i % 2 === 1) { // expect JsonValue
                                     cValid = 'type' in c && c.type !== 'JsonSyntax' && isValidJson(c);
                                 } else { // expect JsonSyntax ,
-                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text === ','; // todo accept whitespace...
+                                    cValid = 'type' in c && c.type === 'JsonSyntax' && c.text.trim() === ',';
                                 }
                                 if (!cValid) {
                                     allValid = false;
@@ -202,7 +202,7 @@ export const isValidJson = (d: Descendant): boolean => {
         }
             break;
         case 'JsonSyntax':
-            toRet = d.text === '';
+            toRet = d.text.trim() === '';
             break;
         default:
     }
@@ -218,23 +218,33 @@ const normalizeJsonSyntax = (editor: ReactEditor, path: Path, text: string, text
     if (isTrue || isFalse || isNull) {
         console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected bool from '${textAfterCol}'`);
         const newText = JSON.stringify(isNull ? null : isTrue);
-        SlateEditor.withoutNormalizing(editor, () => {
-            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
+        let toSelStartOffset=textAfterCol.length;
             let newNodes: Node[] = [{ type: 'JsonBool', children: [{ text: newText }] }];
+        if (textAfterCol.length>newText.length){
+            newNodes.push({type:'JsonSyntax', text: textAfterCol.slice(newText.length)});
+            toSelStartOffset = newText.length;
+        }
             if (insertEmptyJsonSyntax) {
                 newNodes.push({ type: 'JsonSyntax', text: "" });
             }
+        SlateEditor.withoutNormalizing(editor, () => {
+            Transforms.delete(editor, { at: { anchor:{path, offset: text.length - textAfterCol.length},focus:{path, offset:text.length} } });
             Transforms.insertNodes(editor, newNodes, { at: insertAt });
         });
         const pathNext = insertAt.concat([0]);
-        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: going to select ${pathNext}:1-${newText.length}`);
-        Transforms.select(editor, { anchor: { path: pathNext, offset: 1 }, focus: { path: pathNext, offset: newText.length } });
+        console.log(`withJsonElements.normalizeJsonSyntax: rule #3: going to select ${pathNext}:${toSelStartOffset}-${newText.length}`);
+        Transforms.select(editor, { anchor: { path: pathNext, offset: toSelStartOffset }, focus: { path: pathNext, offset: newText.length } });
         return true;
-    } else if (textAfterCol === '"') {
+    } else if (textAfterCol.startsWith('"')) {
         console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected string from '${textAfterCol}'`);
+        const newNodes:Node[] =  [{ type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }];
+        if (textAfterCol.length>1){
+            newNodes.push({type:'JsonSyntax', text: textAfterCol.slice(1)});
+        }
         SlateEditor.withoutNormalizing(editor, () => {
-            Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
-            Transforms.insertNodes(editor, { type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }, { at: insertAt });
+            //Transforms.delete(editor, { at: { path, offset: text.length - textAfterCol.length } });
+            Transforms.delete(editor, { at: {anchor:{path, offset: text.length - textAfterCol.length },focus:{path, offset:text.length} }});
+            Transforms.insertNodes(editor,newNodes, { at: insertAt });
         });
         const anchor = { path: insertAt.concat([1]), offset: 0 };
         const focus = { path: insertAt.concat([2]), offset: 1 };
