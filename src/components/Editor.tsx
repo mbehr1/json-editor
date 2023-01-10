@@ -206,7 +206,7 @@ export const isValidJson = (d: Descendant): boolean => {
             break;
         default:
     }
-    if (!toRet) console.log(`isValidJson(${JSON.stringify(d, undefined, 2)})=${toRet}`);
+    // if (!toRet) console.log(`isValidJson(${JSON.stringify(d, undefined, 2)})=${toRet}`);
     return toRet;
 };
 
@@ -889,10 +889,12 @@ const debugObj = (v: any, indent: number): string => {
         return indentOffset + v.map(e => debugObj(e, indent)).join('\n' + indentOffset);
     }
     if (typeof (v) === 'object' && 'children' in v) {
-        return indentOffset + `${v.type}:[\n` + debugObj(v.children, indent + 1);
+        const isValid = v.type === 'JsonMember'? isValidMember(v) : isValidJson(v);
+        return (isValid ? '+' : '-') + indentOffset + `${v.type}:[\n` + debugObj(v.children, indent + 1);
     }
     if (typeof (v) === 'object' && 'type' in v) {
-        return indentOffset + `${v.type}: '${v.text}'`;
+        const isValid = isValidJson(v);
+        return (isValid? '+' : '-') + indentOffset + `${v.type}: '${v.text}'`;
     }
     if (typeof (v) === 'object' && 'text' in v) {
         return indentOffset + `text: '${v.text}'`;
