@@ -558,6 +558,11 @@ const withJsonElements = (editor: ReactEditor) => {
                                 return;
                             }
                         }
+                        if (text.trim().length===0){ // remove empty
+                            console.log(`withJsonElements.normalizeNode: rule #6.4: text='${text}'`);
+                            Transforms.removeNodes(editor, {at: path});
+                            return;
+                        }
                     } else if (d.children.length === 3) { // chars behind?
                         const c3 = d.children[2] as JsonSyntax;
                         const text = c3.text;
@@ -596,6 +601,10 @@ const withJsonElements = (editor: ReactEditor) => {
                             Transforms.move(editor, { distance: 1 });
                         });
                         return;
+                    }else if (text.trim().length===0){ // remove empty bool
+                        console.log(`withJsonElements.normalizeNode: rule #7.2: text='${text}'`);
+                        Transforms.removeNodes(editor, {at: path});
+                        return;
                     }
                 }
             }
@@ -605,8 +614,13 @@ const withJsonElements = (editor: ReactEditor) => {
             const d = node as Descendant;
             if (!isValidJson(d)) {
                 if ('children' in d && d.children.length === 1) {
-                    // any chars behind?
                     const text = Node.string(node);
+                    if (text.trim().length===0){ // remove empty
+                        console.log(`withJsonElements.normalizeNode: rule #9.2: text='${text}'`);
+                        Transforms.removeNodes(editor, {at: path});
+                        return;
+                    }
+                    // any chars behind?
                     const match = (/([{},"\[\]:]+)$/g).exec(text);
                     if (match && match.length > 0) {
                         const textAfter = match[1];
@@ -629,8 +643,13 @@ const withJsonElements = (editor: ReactEditor) => {
             if (!isValidJson(d)) {
                 if ('children' in d) {
                     if (d.children.length === 1) { // special case for empty array
-                        // any chars behind?
                         const text = Node.string(node);
+                        if (text.trim().length===0){ // remove empty
+                            console.log(`withJsonElements.normalizeNode: rule #12.2: text='${text}'`);
+                            Transforms.removeNodes(editor, {at: path});
+                            return;
+                        }
+                        // any chars behind?
                         const match = (/^\s*\[\s*\]([{},"\[\]:]+)$/g).exec(text);
                         if (match && match.length > 0) {
                             const textAfter = match[1];
@@ -672,8 +691,13 @@ const withJsonElements = (editor: ReactEditor) => {
             if (!isValidJson(d)) {
                 if ('children' in d) {
                     if (d.children.length === 1) { // special case for empty obj
-                        // any chars behind?
                         const text = Node.string(node);
+                        if (text.trim().length===0){ // remove empty
+                            console.log(`withJsonElements.normalizeNode: rule #10.3: text='${text}'`);
+                            Transforms.removeNodes(editor, {at: path});
+                            return;
+                        }
+                        // any chars behind?
                         const match = (/^\s*{\s*}([{},"\[\]:]+)$/g).exec(text);
                         if (match && match.length > 0) {
                             const textAfter = match[1];
@@ -713,6 +737,12 @@ const withJsonElements = (editor: ReactEditor) => {
         if (type === 'JsonMember') {
             const d = node as JsonMember;
             if (!isValidMember(d)) {
+                const text = Node.string(node);
+                if (text.trim().length===0){ // remove empty
+                    console.log(`withJsonElements.normalizeNode: rule #8.2: text='${text}'`);
+                    Transforms.removeNodes(editor, {at: path});
+                    return;
+                }
                 // more than 5 member?
                 if (d.children.length > 5) {
                     console.log(`withJsonElements.normalizeNode:${path} rule #8:`);
