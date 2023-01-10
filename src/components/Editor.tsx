@@ -1028,13 +1028,13 @@ export default function Editor({ object, onChange, getEditor }: { object: any, o
             if (isKeyHotkey('left', nativeEvent)) {
                 //console.log(`onKeyDown(left)...`, selection);
                 event.preventDefault()
-                Transforms.move(editor, { unit: 'offset', reverse: true })
+                Transforms.move(editor, { unit: 'character', reverse: true })
                 return
             }
             if (isKeyHotkey('right', nativeEvent)) {
                 //console.log(`onKeyDown(right)...path=${selection.anchor.path.join('/')}:${selection.anchor.offset}`);
                 event.preventDefault()
-                Transforms.move(editor, { unit: 'offset' })
+                Transforms.move(editor, { unit: 'character' })
                 return
             }
         }
