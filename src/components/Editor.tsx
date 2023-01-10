@@ -846,7 +846,7 @@ const desValue = (value: any): JsonValue | undefined => {
 }
 
 const deserialize = (obj: any): (Descendant)[] => {
-    console.log(`deserialize(${JSON.stringify(obj)})...`);
+    // console.log(`deserialize(${JSON.stringify(obj)})...`);
     const desVal = desValue(obj);
     if (desVal !== undefined) {
         if (!isValidJson(desVal)) {
