@@ -409,7 +409,10 @@ const withJsonElements = (editor: ReactEditor) => {
         // #4 like #2 but at start of an object after the {
         if (type === 'JsonSyntax' && parentType === 'JsonMember') {
             const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
-            if (isLast) {
+            if (isLast) { // and prev is not a JsonKey
+                const isFirst = path[path.length-1] === 0;
+                const prevNode = isFirst ? undefined : Node.get(editor, Path.previous(path));
+                if (!(prevNode && 'type' in prevNode && prevNode.type === 'JsonKey')){
                 const text = Node.string(node);
                 if (text.match(/^\s*"\s*$/g)) {
                     console.log(`withJsonElements.normalizeNode:${path} rule #4.1: text='${text}'`);
@@ -420,6 +423,30 @@ const withJsonElements = (editor: ReactEditor) => {
                     const focus = { path: Path.next(Path.next(path)), offset: 2 };
                     console.log(`withJsonElements.normalizeNode: rule #4.1: going to select ${JSON.stringify(anchor)}-${JSON.stringify(focus)}`);
                     Transforms.select(editor, { anchor, focus });
+                        return;
+                    }
+                }
+            }
+        }
+        // #13 like #4 but with an empty JsonSyntax
+        if (type === 'JsonSyntax' && parentType === 'JsonObject'){
+            const isFirst = path[path.length-1] === 0;
+            if (isFirst){
+                const text = Node.string(node);
+                if (text.match(/^\s*{\s*"/g)){
+                    console.log(`withJsonElements.normalizeNode:${path} rule #13: text='${text}'`);
+                    const textAfter = text.slice(text.indexOf('"')+1);
+                    const newNodes: Node[] =  [{type: 'JsonMember', children:[{type: 'JsonSyntax', text:'"'},{ type: 'JsonKey', text: 'key' }, { type: 'JsonSyntax', text: '":' }]}];
+                    if (textAfter.length>0){
+                        newNodes.push({type: 'JsonSyntax', text: textAfter});
+                    }
+                    SlateEditor.withoutNormalizing(editor, ()=>{
+                        Transforms.delete(editor, {at: {anchor: {path, offset: text.indexOf('"')}, focus:{path, offset: text.length}}});
+                        Transforms.insertNodes(editor,newNodes, { at: Path.next(path) });
+                        const anchor = { path: Path.next(path).concat([1]), offset: 0 };
+                        const focus = { path: Path.next(path).concat([2]), offset: 2 };
+                        Transforms.select(editor, { anchor, focus });
+                    });
                     return;
                 }
             }
