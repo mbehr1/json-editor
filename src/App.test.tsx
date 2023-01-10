@@ -5,8 +5,8 @@ import App from './App';
 
 test('renders learn react link', async () => {
   render(<App />);
-  expect(screen.getByTestId('jsonEditor')).toBeInTheDocument();
-  const input = screen.getByTestId('jsonEditor');
+  // expect(screen.getByTestId('jsonEditor')).toBeInTheDocument();
+  const input = screen.getByRole('textbox');//   getByTestId('jsonEditor');
   expect(input).toHaveAttribute("data-slate-editor", "true")
   input.focus()
   //fireEvent.change(input, { target: { value: 'matti' } });

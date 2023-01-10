@@ -42,10 +42,10 @@ test('editor enter valid jsons', async () => {
             }
         })
         console.log(`editor.children=${JSON.stringify(editor.children)}`);
-        //console.log(`editor=`, editor);
+        //console.log(`expectedText='${expectedText}'`);
         expect(editor.children.length).toBe(1);
-        expect(isValidJson(editor.children[0])).toBeTruthy();
         expect(Node.string(editor)).toBe(expectedText);
+        expect(isValidJson(editor.children[0])).toBeTruthy();
         const convObj = serialize(editor.children);
         expect(convObj).toEqual(expectedObj);
     }
@@ -64,6 +64,14 @@ test('editor enter valid jsons', async () => {
     await testInput([])
     await testInput([true])
     await testInput([true, false, null])
+    await testInput([""])
+    await testInput(["", true])
+    await testInput(['', 'foo'])
+    await testInput([{}])
+    await testInput([[]])
+    await testInput([[[],{}]])
+    await testInput([[{},[]]])
+    await testInput([1,2])
 
     await testInput({})
     await testInput({ foo: true }) // single member, bool
@@ -74,6 +82,7 @@ test('editor enter valid jsons', async () => {
     await testInput({ a: 'fo"o' }, '{"a":"fo"o"}') // see above, no escaped chars shown in the editor
     await testInput({ a: 42 })
     await testInput({ a: -42.5 })
+    await testInput({a:[]});
     await testInput({ foo: null, bla: true }) // two member, bool at start and end
     await testInput({ a: false, b: -42.5 }) // two member, bool and number
     await testInput({ a: -42.5, b: null }) // two member, bool and number
@@ -88,6 +97,7 @@ test('editor enter valid jsons', async () => {
     await testInput({ a: {} }) // one member: empty object
     await testInput({ a: { b: true } }) // one member: object with single entry
     await testInput({ a: { b: "", c: 42.5 }, d: false }) // two member: object with two entries
+    await testInput({ a: { b: [1,2], c: [null,"]"] }, d: false }) // two member: object with two entries
 
     console.log(`editor=${JSON.stringify(editor.children)}`, editor);
 

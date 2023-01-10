@@ -543,6 +543,7 @@ const withJsonElements = (editor: ReactEditor) => {
                                 SlateEditor.withoutNormalizing(editor, () => {
                                     Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
                                     Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                                    Transforms.move(editor, { distance: expectedLength });
                                 });
                                 return;
                             }
@@ -557,6 +558,7 @@ const withJsonElements = (editor: ReactEditor) => {
                             SlateEditor.withoutNormalizing(editor, () => {
                                 Transforms.delete(editor, { at: { anchor: { path: path.concat([2]), offset: expectedLength }, focus: { path: path.concat([2]), offset: text.length } } })
                                 Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                                Transforms.move(editor, {distance:1});
                             });
                             return;
                         }
@@ -604,8 +606,52 @@ const withJsonElements = (editor: ReactEditor) => {
                         SlateEditor.withoutNormalizing(editor, () => {
                             Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
                             Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                            Transforms.move(editor, {distance: textAfter.length});
                         });
                         return;
+                    }
+                }
+            }
+        }
+
+        if (type==='JsonArray'){ // todo besides the regex match=... this is same as JsonObject...
+            const d = node as Descendant;
+            if (!isValidJson(d)) {
+                if ('children' in d) {
+                    if (d.children.length === 1) { // special case for empty array
+                        // any chars behind?
+                        const text = Node.string(node);
+                        const match = (/^\s*\[\s*\]([{},"\[\]:]+)$/g).exec(text);
+                        if (match && match.length > 0) {
+                            const textAfter = match[1];
+                            console.log(`withJsonElements.normalizeNode: rule #12: text='${text}' textAfter='${textAfter}'`);
+                            // split the rest away
+                            const expectedLength = text.length - textAfter.length;
+                            SlateEditor.withoutNormalizing(editor, () => {
+                                Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
+                                Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                                Transforms.move(editor, { distance: textAfter.length } );
+                            });
+                            return;
+                        }
+                    } else if (d.children.length >= 3) {
+                        // chars behind last JsonSyntax }?
+                        const cl = d.children[d.children.length - 1];
+                        if ('type' in cl && cl.type === 'JsonSyntax') {
+                            const match = (/^\s*\]\s*([{},"\[\]:]+)$/g).exec(cl.text);
+                            if (match && match.length > 0) {
+                                const textAfter = match[1];
+                                console.log(`withJsonElements.normalizeNode: rule #12.1: text='${cl.text}' textAfter='${textAfter}'`);
+                                // split the rest away
+                                const expectedLength = cl.text.length - textAfter.length;
+                                SlateEditor.withoutNormalizing(editor, () => {
+                                    Transforms.delete(editor, { at: { anchor: { path: path.concat([d.children.length - 1]), offset: expectedLength }, focus: { path: path.concat([d.children.length - 1]), offset: cl.text.length } } })
+                                    Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: cl.text.slice(expectedLength) }], { at: Path.next(path) });
+                                    Transforms.move(editor, { distance: textAfter.length } );
+                                });
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -627,6 +673,7 @@ const withJsonElements = (editor: ReactEditor) => {
                             SlateEditor.withoutNormalizing(editor, () => {
                                 Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: expectedLength }, focus: { path: path.concat([0]), offset: text.length } } })
                                 Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: text.slice(expectedLength) }], { at: Path.next(path) });
+                                Transforms.move(editor, {distance: textAfter.length});
                             });
                             return;
                         }
@@ -643,6 +690,7 @@ const withJsonElements = (editor: ReactEditor) => {
                                 SlateEditor.withoutNormalizing(editor, () => {
                                     Transforms.delete(editor, { at: { anchor: { path: path.concat([d.children.length - 1]), offset: expectedLength }, focus: { path: path.concat([d.children.length - 1]), offset: cl.text.length } } })
                                     Transforms.insertNodes(editor, [{ type: 'JsonSyntax', text: cl.text.slice(expectedLength) }], { at: Path.next(path) });
+                                    Transforms.move(editor, {distance: textAfter.length});
                                 });
                                 return;
                             }
