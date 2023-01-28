@@ -5,6 +5,11 @@ import { create, act /*, ReactTestRenderer*/ } from 'react-test-renderer';
 import { withReact, ReactEditor } from 'slate-react';
 import { BaseEditor, createEditor, Transforms, Node, Editor as SlateEditor } from 'slate';
 
+/* bugs:
+ [ ] enter to use line breaks doesn't work
+*/
+
+
 const createNodeMock = () => ({
     ownerDocument: global.document,
     getRootNode: () => global.document,
@@ -29,9 +34,11 @@ const testInputText = async (editor: BaseEditor&ReactEditor, inputChars: string,
     //console.log(`expectedText='${expectedText}'`);
     expect(editor.children.length).toBe(1);
     expect(Node.string(editor)).toBe(expectedText);
-    expect(isValidJson(editor.children[0])).toBeTruthy();
-    const convObj = serialize(editor.children);
-    expect(convObj).toEqual(expectedObj);
+    if (expectedObj !== undefined) {
+        expect(isValidJson(editor.children[0])).toBeTruthy();
+        const convObj = serialize(editor.children);
+        expect(convObj).toEqual(expectedObj);
+    }
 }
 
 type Op = {
@@ -86,6 +93,17 @@ test('editor edit existing', async ()=>{
     //await testEdit(editor, [], true, 'true')
     await testInputText(editor, '[true]', [true], '[true]')
     await testEdit(editor, [{op:'left',times: 1}, {op:'insert', data: ',false'}], [true, false], '[true,false]');
+
+    await act(() => {
+        /*el =*/ create(
+        <Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }
+    )
+    })
+    expect(editor).toBeDefined()
+
+    await testInputText(editor, '{"a":"', undefined, '{"a":"string"')
+    await testEdit(editor, [{ op: 'right', times: 7 }, { op: 'insert', data: '}' }], { a: 'string' }, '{"a":"string"}')
+    await testEdit(editor, [{ op: 'left', times: 5 }, { op: 'insert', data: '"' }], { a: 'str"ing' }, '{"a":"str"ing"}')
 })
 
 test('editor enter valid jsons', async () => {

@@ -1,6 +1,6 @@
 import { Editable, Slate, withReact, ReactEditor, DefaultElement, RenderElementProps, RenderLeafProps } from "slate-react";
 import { isKeyHotkey } from "is-hotkey";
-import { createEditor, Descendant, BaseEditor, Range, Transforms, Node, Path, Editor as SlateEditor, Selection } from "slate";
+import { createEditor, Descendant, BaseEditor, Range, Transforms, Node, Path, Editor as SlateEditor } from "slate";
 import { useCallback, useMemo, useState } from "react";
 import { withHistory } from 'slate-history';
 
@@ -237,7 +237,7 @@ const normalizeJsonSyntax = (editor: ReactEditor, path: Path, text: string, text
         return true;
     } else if (textAfterCol.startsWith('"')) {
         console.log(`withJsonElements.normalizeJsonSyntax: rule #3: textAfterCol detected string from '${textAfterCol}'`);
-        const newNodes:Node[] =  [{ type: 'JsonString', children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }];
+        const newNodes: Node[] = [{ type: 'JsonString', isJsonUnescaped: true, children: [{ type: 'JsonSyntax', text: '"' }, { text: "string" }, { type: 'JsonSyntax', text: '"' }] }];
         if (textAfterCol.length>1){
             newNodes.push({type:'JsonSyntax', text: textAfterCol.slice(1)});
         }
@@ -930,7 +930,12 @@ const serValue = (d: Descendant) => {
     }
 }
 
-export const serialize = (value: Descendant[]) => {
+/**
+ * serialize the editor structure back into a valid (json) object
+ * @param value 
+ * @returns a valid (json) object,array,string, number, boolean, null or undefined
+ */
+export const serialize = (value: Descendant[]): any => {
     console.log(`serialize(value=${JSON.stringify(value)})...`);
     if (value === undefined) return undefined;
     if (value.length !== 1) return undefined;
@@ -957,11 +962,13 @@ const debugObj = (v: any, indent: number): string => {
     }
     if (typeof (v) === 'object' && 'children' in v) {
         const isValid = v.type === 'JsonMember'? isValidMember(v) : isValidJson(v);
-        return (isValid ? '+' : '-') + indentOffset + `${v.type}:[\n` + debugObj(v.children, indent + 1);
+        const type = v.type === 'JsonString' ? `JsonString(unescaped=${v.isJsonUnescaped})` : v.type;
+        return (isValid ? '+' : '-') + indentOffset + `${type}:[\n` + debugObj(v.children, indent + 1);
     }
     if (typeof (v) === 'object' && 'type' in v) {
         const isValid = isValidJson(v);
-        return (isValid? '+' : '-') + indentOffset + `${v.type}: '${v.text}'`;
+        const type = v.type === 'JsonString' ? `JsonString(unescaped=${v.isJsonUnescaped})` : v.type;
+        return (isValid ? '+' : '-') + indentOffset + `${type}: '${v.text}'`;
     }
     if (typeof (v) === 'object' && 'text' in v) {
         return indentOffset + `text: '${v.text}'`;
@@ -1052,6 +1059,12 @@ export default function Editor({ object, onChange, getEditor }: { object: any, o
             <pre style={{ whiteSpace: 'pre', textAlign: 'left' }}>
                 <code>
                     {debugHtml(document)}
+                </code>
+            </pre>
+            As JSON:
+            <pre style={{ whiteSpace: 'pre', textAlign: 'left' }}>
+                <code>
+                    {JSON.stringify(serialize(document), null, 2)}
                 </code>
             </pre>
         </React.Fragment>
