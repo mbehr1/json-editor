@@ -8,6 +8,7 @@ import { BaseEditor, createEditor, Transforms, Node, Editor as SlateEditor } fro
 /* bugs:
  [ ] enter to use line breaks doesn't work
  [ ] editing arrays (partly works. change of type does not. e.g. [1,2]-> [1,false,2])
+ [ ] deleting an array member leads to normalization loop
  [ ] enter while typing a string (so at the end of the string)
 */
 

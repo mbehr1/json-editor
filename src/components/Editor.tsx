@@ -603,13 +603,14 @@ const withJsonElements = (editor: ReactEditor) => {
                             const endsProper = text.endsWith('"') && !text.endsWith('\\"');
                             if (startsProper && endsProper) {
                                 // split into JsonSyntax ", text, JsonSyntax "
-                                console.log(`withJsonElements.normalizeNode: rule #6.2: text='${text}'`);
+                                const oldOffset = editor.selection && Range.isCollapsed(editor.selection) ? editor.selection.anchor.offset : -1;
+                                console.log(`withJsonElements.normalizeNode: rule #6.2: text='${text}' oldOffset=${oldOffset}`);
                                 SlateEditor.withoutNormalizing(editor, () => {
                                     Transforms.setNodes(editor, { isJsonUnescaped: true }, { at: path });
                                     const unescaped = JSON.parse('"' + text.slice(1, text.length - 1) + '"');
                                     Transforms.delete(editor, { at: { anchor: { path: path.concat([0]), offset: 1 }, focus: { path: path.concat([0]), offset: text.length } } });
                                     Transforms.insertNodes(editor, [{ text: unescaped }, { type: 'JsonSyntax', text: '"' }], { at: path.concat([1]) });
-                                    Transforms.move(editor, { distance: unescaped.length + 1 });
+                                    Transforms.move(editor, { distance: oldOffset > 2 ? unescaped.length + 1 : 1 });
                                 });
                                 return;
                             }
