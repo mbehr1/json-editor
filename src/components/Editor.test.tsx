@@ -7,6 +7,8 @@ import { BaseEditor, createEditor, Transforms, Node, Editor as SlateEditor } fro
 
 /* bugs:
  [ ] enter to use line breaks doesn't work
+ [ ] editing arrays (partly works. change of type does not. e.g. [1,2]-> [1,false,2])
+ [ ] enter while typing a string (so at the end of the string)
 */
 
 
@@ -89,21 +91,33 @@ test('editor edit existing', async ()=>{
     })
     expect(editor).toBeDefined()
 
-    //await testInputText(editor, 't', true, 'true')
-    //await testEdit(editor, [], true, 'true')
+    // edit an array of bools at the end
     await testInputText(editor, '[true]', [true], '[true]')
     await testEdit(editor, [{op:'left',times: 1}, {op:'insert', data: ',false'}], [true, false], '[true,false]');
 
-    await act(() => {
-        /*el =*/ create(
-        <Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }
-    )
-    })
-    expect(editor).toBeDefined()
+    // edit an array of numbers at the end
+    await act(() => { create(<Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }) })
+    await testInputText(editor, '[1]', [1], '[1]')
+    await testEdit(editor, [{ op: 'left', times: 1 }, { op: 'insert', data: ',2,3' }], [1, 2, 3], '[1,2,3]');
 
+
+    // insert a json to be escaped char into the prefilled string:
+    await act(() => { create(<Editor key='#3' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }) })
     await testInputText(editor, '{"a":"', undefined, '{"a":"string"')
     await testEdit(editor, [{ op: 'right', times: 7 }, { op: 'insert', data: '}' }], { a: 'string' }, '{"a":"string"}')
     await testEdit(editor, [{ op: 'left', times: 5 }, { op: 'insert', data: '"' }], { a: 'str"ing' }, '{"a":"str"ing"}')
+
+
+    // edit an array of numbers in the middle
+    await act(() => { create(<Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }) })
+    await testInputText(editor, '[1,3]', [1, 3], '[1,3]')
+    await testEdit(editor, [{ op: 'left', times: 2 }, { op: 'insert', data: '2,' }], [1, 2, 3], '[1,2,3]');
+
+    await act(() => { create(<Editor key='#2' object={undefined} getEditor={(ed) => editor = ed} />, { createNodeMock }) })
+    await testInputText(editor, '[1,3]', [1, 3], '[1,3]')
+    await testEdit(editor, [{ op: 'left', times: 2 }, { op: 'insert', data: '2' }, { op: 'insert', data: ',' }], [1, 2, 3], '[1,2,3]');
+
+
 })
 
 test('editor enter valid jsons', async () => {
@@ -152,6 +166,7 @@ test('editor enter valid jsons', async () => {
     await testInput('')
     await testInput('foo')
     await testInput('fo"o', '"fo"o"') // we dont want the editor to show the escaped \" but only the "
+    await testInput('fo"\no', '"fo"\no"')
     await testInput(42)
     await testInput(-42.5)
     await testInput(-42.5e-2)
