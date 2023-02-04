@@ -1,6 +1,5 @@
-/* eslint-disable testing-library/no-node-access */
 import Editor from './Editor';
-import { isValidJson, serialize } from './Editor';
+import { isValidJson, serialize, TSJSONValue } from './Editor';
 import { create, act /*, ReactTestRenderer*/ } from 'react-test-renderer';
 import { withReact, ReactEditor } from 'slate-react';
 import { BaseEditor, createEditor, Transforms, Node, Editor as SlateEditor } from 'slate';
@@ -18,7 +17,7 @@ const createNodeMock = () => ({
     getRootNode: () => global.document,
 })
 
-const testInputText = async (editor: BaseEditor&ReactEditor, inputChars: string, expectedObj: any, expectedText: string) => {
+const testInputText = async (editor: BaseEditor & ReactEditor, inputChars: string, expectedObj: TSJSONValue | undefined, expectedText: string) => {
     console.warn(`testInputText :'${inputChars}'`, expectedObj);
     // first: input char by char
 
@@ -27,10 +26,10 @@ const testInputText = async (editor: BaseEditor&ReactEditor, inputChars: string,
         //Transforms.splitNodes(editor, { at: { path: [0, 0], offset: 2 } })
         Transforms.select(editor, { anchor: SlateEditor.start(editor, []), focus: SlateEditor.start(editor, []) });
         console.log(`sending: '${inputChars.slice(0, 1)}'`);
-        Transforms.insertText(editor!, inputChars.slice(0, 1)); // , { at: firstPath });
+        Transforms.insertText(editor, inputChars.slice(0, 1)); // , { at: firstPath });
         for (let i = 1; i < inputChars.length; ++i) {
             console.log(`sending: '${inputChars.slice(i, i + 1)}'`);
-            Transforms.insertText(editor!, inputChars.slice(i, i + 1));
+            Transforms.insertText(editor, inputChars.slice(i, i + 1));
         }
     })
     console.log(`editor.children=${JSON.stringify(editor.children)}`);
@@ -52,7 +51,7 @@ type Op = {
 
 type Ops = Op[];
 
-const testEdit = async (editor: BaseEditor&ReactEditor, ops: Ops, expectedObj: any, expectedText: string) =>{
+const testEdit = async (editor: BaseEditor & ReactEditor, ops: Ops, expectedObj: TSJSONValue, expectedText: string) => {
     await act(async () => {
         for (const op of ops){
             switch (op.op){
@@ -64,9 +63,11 @@ const testEdit = async (editor: BaseEditor&ReactEditor, ops: Ops, expectedObj: a
                     break;
                 case 'insert':
                     expect(op.data).toBeTruthy();
-                    for (let i=0; i<(op.times ? op.times : 1); i++){
-                        console.log(`sending: '${op.data}'`);
-                        Transforms.insertText(editor!, op.data!);
+                    if (op.data !== undefined) {
+                        for (let i = 0; i < (op.times ? op.times : 1); i++) {
+                            console.log(`sending: '${op.data}'`);
+                            Transforms.insertText(editor, op.data);
+                        }
                     }
                     break;
                 default:
@@ -124,12 +125,12 @@ test('editor edit existing', async ()=>{
 test('editor enter valid jsons', async () => {
     let editor: (BaseEditor & ReactEditor) = withReact(createEditor());// only to avoid undefined issues...
 
-    const testInput = async (obj: any, expectedText?: string) => {
+    const testInput = async (obj: TSJSONValue, expectedText?: string) => {
         const inputChars = JSON.stringify(obj);
         return testInputText(inputChars, obj, expectedText ? expectedText : inputChars);
     }
 
-    const testInputText = async (inputChars: string, expectedObj: any, expectedText: string) => {
+    const testInputText = async (inputChars: string, expectedObj: TSJSONValue, expectedText: string) => {
         console.warn(`testInputText :'${inputChars}'`, expectedObj);
         //let el: ReactTestRenderer
         act(() => {
@@ -146,10 +147,10 @@ test('editor enter valid jsons', async () => {
             //Transforms.splitNodes(editor, { at: { path: [0, 0], offset: 2 } })
             Transforms.select(editor, { anchor: SlateEditor.start(editor, []), focus: SlateEditor.start(editor, []) });
             console.log(`sending: '${inputChars.slice(0, 1)}'`);
-            Transforms.insertText(editor!, inputChars.slice(0, 1)); // , { at: firstPath });
+            Transforms.insertText(editor, inputChars.slice(0, 1)); // , { at: firstPath });
             for (let i = 1; i < inputChars.length; ++i) {
                 console.log(`sending: '${inputChars.slice(i, i + 1)}'`);
-                Transforms.insertText(editor!, inputChars.slice(i, i + 1));
+                Transforms.insertText(editor, inputChars.slice(i, i + 1));
             }
         })
         console.log(`editor.children=${JSON.stringify(editor.children)}`);

@@ -6,6 +6,15 @@ import { withHistory } from 'slate-history';
 
 import React from "react";
 
+// type to avoid usage of "any" for a valid json value:
+export type TSJSONValue =
+    | null
+    | string
+    | number
+    | boolean
+    | { [x: string]: TSJSONValue }
+    | Array<TSJSONValue>;
+
 // lets model a json according to ECMA-404:
 type JsonObject = {
     type: 'JsonObject',
@@ -34,7 +43,10 @@ type JsonString = {
     isJsonUnescaped?: boolean, // the text is already "unescaped" (so not in JSON 'foo\"bla' but 'foo"bla')
 };
 
-type JsonValue = JsonObject | JsonArray | JsonString | { type: 'JsonNumber', children: { text: string }[] } | { type: 'JsonBool', children: { text: string }[] /* true false null */ };
+type JsonNumber = { type: 'JsonNumber', children: { text: string }[] };
+type JsonBool = { type: 'JsonBool', children: { text: string }[] /* true false null */ };
+
+type JsonValue = JsonObject | JsonArray | JsonString | JsonNumber | JsonBool;
 
 type JsonSyntax = {
     type: 'JsonSyntax',
@@ -49,8 +61,8 @@ type JsonDoc = {
 declare module 'slate' {
     interface CustomTypes {
         Editor: BaseEditor & ReactEditor
-        Element: JsonDoc | JsonValue | JsonMember | JsonKey,
-        Text: { text: string, type?: string }
+        Element: JsonDoc | JsonValue | JsonMember | JsonKey | JsonSyntax,
+        Text: { text: string }//, type?: string }
     }
 }
 
@@ -59,7 +71,7 @@ const isEmpty = (d: Descendant): boolean => {
     if ('type' in d) {
         return d.type === 'JsonSyntax' && (d.text.length === 0);
     } else {
-        if ('text' in d && (d as any).text.length === 0) { return true } else { return false; }
+        if ('text' in d && d.text.length === 0) { return true } else { return false; }
     }
 };
 
@@ -82,6 +94,7 @@ export const isValidMember = (d: JsonMember): boolean => {
 export const isValidJson = (d: Descendant): boolean => {
     //console.log(`isValidJson(${JSON.stringify(d)})...`);
     let toRet = false;
+    if (!('type' in d)) { return false; }
     switch (d.type) {
         case 'JsonBool':
             if ('children' in d && d.children.length === 1) {
@@ -450,9 +463,9 @@ const withJsonElements = (editor: ReactEditor) => {
         if (type === 'JsonSyntax' && parentType === 'JsonMember') {
             const isLast = Path.equals(path, Node.last(editor, Path.parent(path))[1]);
             if (isLast) { // and prev is not a JsonKey
-                const isFirst = path[path.length-1] === 0;
-                const prevNode = isFirst ? undefined : Node.get(editor, Path.previous(path));
-                if (!(prevNode && 'type' in prevNode && prevNode.type === 'JsonKey')){
+                //const isFirst = path[path.length-1] === 0;
+                //const prevNode = isFirst ? undefined : Node.get(editor, Path.previous(path));
+                // if (!(prevNode && 'type' in prevNode && prevNode.type === 'JsonKey')){
                 const text = Node.string(node);
                 if (text.match(/^\s*"\s*$/g)) {
                     console.log(`withJsonElements.normalizeNode:${path} rule #4.1: text='${text}'`);
@@ -465,7 +478,9 @@ const withJsonElements = (editor: ReactEditor) => {
                     Transforms.select(editor, { anchor, focus });
                         return;
                     }
-                }
+                //} else {
+                //    console.assert(false); // eslint means it cannot happen...
+                //}
             }
         }
         // #13 like #4 but with an empty JsonSyntax
@@ -831,7 +846,7 @@ const withJsonElements = (editor: ReactEditor) => {
         return normalizeNode([node, path]);
     }
 
-    editor.isInline = (element: JsonDoc | JsonValue | JsonMember | JsonKey) => {
+    editor.isInline = (element: JsonSyntax | JsonDoc | JsonValue | JsonMember | JsonKey) => {
         if (['JsonBool', 'JsonNumber', 'JsonKey', 'JsonString', 'JsonMember', 'JsonObject', 'JsonArray'].includes(element.type)) return true;
         return isInline(element);
     }
@@ -846,9 +861,10 @@ const ExampleDocument: Descendant[] = [
     }
 ];*/
 
-const desValue = (value: any): JsonValue | undefined => {
+const desValue = (value: TSJSONValue | undefined): JsonValue | undefined => {
     // needs at least one child with text...
     if (value === undefined) return undefined;
+    if (value === null) return { type: 'JsonBool', children: [{ text: 'null' }] }
     // todo null...
     switch (typeof value) {
         case 'string':
@@ -891,7 +907,7 @@ const desValue = (value: any): JsonValue | undefined => {
     }
 }
 
-const deserialize = (obj: any): (Descendant)[] => {
+const deserialize = (obj: TSJSONValue | undefined): (Descendant)[] => {
     // console.log(`deserialize(${JSON.stringify(obj)})...`);
     const desVal = desValue(obj);
     if (desVal !== undefined) {
@@ -904,11 +920,12 @@ const deserialize = (obj: any): (Descendant)[] => {
     }
 }
 
-const serValue = (d: Descendant) => {
+const serValue = (d: Descendant): TSJSONValue | undefined => {
+    if (!('type' in d)) { return undefined }
     switch (d.type) {
         case 'JsonBool': {
             // toRet = ['true', 'false', 'null'].includes(d.children[0].text);
-            switch ((d as any).children[0].text.toLowerCase()) {
+            switch (d.children[0].text.toLowerCase()) {
                 case 'true': return true;
                 case 'false': return false;
                 case 'null': return null;
@@ -944,12 +961,15 @@ const serValue = (d: Descendant) => {
                     return {};
                 } else {
                     // todo serialize member
-                    const obj: any = {};
+                    const obj: TSJSONValue = {};
                     for (let i = 1; i < d.children.length; ++i) { // we skip the first ...
                         const c = d.children[i];
                         if (c.type === 'JsonSyntax') continue;
                         if (c.type === 'JsonMember') {
-                            obj[(c.children[1] as JsonKey).text] = serValue(c.children[3]);
+                            const v = serValue(c.children[3]);
+                            if (v !== undefined) {
+                                obj[(c.children[1] as JsonKey).text] = v;
+                            }
                         }
                     }
                     return obj;
@@ -962,11 +982,12 @@ const serValue = (d: Descendant) => {
                 if (d.children.length === 1) {
                     return [];
                 } else {
-                    const arr: any[] = [];
+                    const arr: TSJSONValue[] = [];
                     for (let i = 1; i < d.children.length; ++i) { // we skip the first ...
                         const c = d.children[i];
                         if (c.type === 'JsonSyntax') continue;
-                        arr.push(serValue(c));
+                        const v = serValue(c);
+                        if (v !== undefined) { arr.push(v); }
                     }
                     return arr;
                 }
@@ -981,14 +1002,14 @@ const serValue = (d: Descendant) => {
  * @param value 
  * @returns a valid (json) object,array,string, number, boolean, null or undefined
  */
-export const serialize = (value: Descendant[]): any => {
+export const serialize = (value: Descendant[]): TSJSONValue | undefined => {
     // console.log(`serialize(value=${JSON.stringify(value)})...`);
     if (value === undefined) return undefined;
     if (value.length !== 1) return undefined;
     try {
         const d = value[0];
         if (!isValidJson(d)) return undefined;
-        if (d.type !== 'JsonDoc') return undefined;
+        if (!('type' in d) || d.type !== 'JsonDoc') return undefined;
         for (const child of (d as JsonDoc).children) {
             if (isEmpty(child as Descendant)) continue;
             if (isValidJson(child as Descendant)) {
@@ -1001,7 +1022,7 @@ export const serialize = (value: Descendant[]): any => {
     return undefined;
 };
 
-const debugObj = (v: any, indent: number): string => {
+const debugObj = (v: Descendant | Descendant[], indent: number): string => {
     const indentOffset = (' '.repeat(indent));
     if (Array.isArray(v)) {
         return indentOffset + v.map(e => debugObj(e, indent)).join('\n' + indentOffset);
@@ -1013,7 +1034,7 @@ const debugObj = (v: any, indent: number): string => {
     }
     if (typeof (v) === 'object' && 'type' in v) {
         const isValid = isValidJson(v);
-        const type = v.type === 'JsonString' ? `JsonString(unescaped=${v.isJsonUnescaped})` : v.type;
+        const type = v.type === 'JsonString' ? `JsonString(unescaped=${'isJsonUnescaped' in v ? v.isJsonUnescaped : undefined})` : v.type;
         return (isValid ? '+' : '-') + indentOffset + `${type}: '${v.text}'`;
     }
     if (typeof (v) === 'object' && 'text' in v) {
@@ -1023,10 +1044,10 @@ const debugObj = (v: any, indent: number): string => {
 }
 
 const debugHtml = (value: Descendant[]) => {
-    return debugObj((value[0] as any).children, 0);
+    return debugObj('children' in value[0] ? value[0].children : value, 0);
 }
 
-export default function Editor({ object, onChange, getEditor }: { object: any, onChange?: ((v: any) => void), getEditor?: (ed: ReactEditor) => void }) {
+export default function Editor({ object, /*onChange,*/ getEditor }: { object: TSJSONValue | undefined, onChange?: ((v: TSJSONValue | undefined) => void), getEditor?: (ed: ReactEditor) => void }) {
     const editor = useMemo(() => withJsonElements(withHistory(withReact(createEditor()))), []);
     const [document, setDocument] = useState(deserialize(object));
 
@@ -1061,11 +1082,10 @@ export default function Editor({ object, onChange, getEditor }: { object: any, o
                 case 'JsonString': break;
                 default: el = <u>{el}</u>; break;
             }
+            return <span {...attributes} title={'' + leaf.type}>{el}</span >;
         } else {
             return <span {...attributes}>{el}</span >;
         }
-
-        return <span {...attributes} title={'' + leaf.type}>{el}</span >;
     }, []);
 
     const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = event => {
